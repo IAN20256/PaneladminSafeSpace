@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Safe Space — Feedback (privado)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  :root{
+    --bg:#0d0d1a;--surface:#13132b;--surface2:#1a1a38;
+    --accent:#7c6ff7;--accent2:#a78bfa;--text:#e8e6ff;--muted:#8b88b3;
+    --border:rgba(124,111,247,0.2);--danger:#f87171;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:'DM Sans',system-ui,sans-serif;padding:1.5rem;min-height:100vh;}
+  h1{font-family:'Syne',sans-serif;font-size:1.4rem;margin-bottom:1rem;color:var(--accent2);}
+  .key-box{display:flex;gap:.5rem;margin-bottom:1.5rem;max-width:500px;}
+  input{flex:1;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:.7rem .9rem;color:var(--text);font-size:.9rem;outline:none;}
+  button{background:linear-gradient(135deg,var(--accent),#6366f1);border:none;border-radius:10px;padding:.7rem 1.2rem;color:white;font-weight:500;cursor:pointer;}
+  .entry{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1rem;margin-bottom:.8rem;max-width:600px;}
+  .entry-tipo{display:inline-block;background:var(--surface2);color:var(--accent2);font-size:.7rem;padding:.2rem .6rem;border-radius:20px;margin-bottom:.5rem;text-transform:uppercase;letter-spacing:.03em;}
+  .entry-msg{font-size:.9rem;line-height:1.5;margin-bottom:.5rem;}
+  .entry-fecha{font-size:.75rem;color:var(--muted);}
+  .error{color:var(--danger);font-size:.85rem;margin-bottom:1rem;}
+  .empty{color:var(--muted);}
+</style>
+</head>
+<body>
+  <h1>📬 Feedback de Safe Space</h1>
+
+  <div class="key-box">
+    <input type="password" id="adminKey" placeholder="Pega tu clave de administrador aquí">
+    <button onclick="cargarFeedback()">Ver feedback</button>
+  </div>
+
+  <div id="error" class="error"></div>
+  <div id="lista"></div>
+
+<script>
+// Cambia esto por la URL real de tu Worker una vez desplegado
+const WORKER_URL = 'https://TU-WORKER.workers.dev';
+
+async function cargarFeedback() {
+  const key = document.getElementById('adminKey').value.trim();
+  const errorEl = document.getElementById('error');
+  const listaEl = document.getElementById('lista');
+  errorEl.textContent = '';
+  listaEl.innerHTML = '';
+
+  if (!key) {
+    errorEl.textContent = 'Escribe tu clave primero.';
+    return;
+  }
+
+  try {
+    const res = await fetch(`${WORKER_URL}/list`, {
+      headers: { 'Authorization': `Bearer ${key}` }
+    });
+
+    if (res.status === 401) {
+      errorEl.textContent = 'Clave incorrecta.';
+      return;
+    }
+    if (!res.ok) {
+      errorEl.textContent = 'Error al conectar con el servidor.';
+      return;
+    }
+
+    const data = await res.json();
+    if (!data.entries || data.entries.length === 0) {
+      listaEl.innerHTML = '<p class="empty">Todavía no hay feedback.</p>';
+      return;
+    }
+
+    listaEl.innerHTML = data.entries.map(e => `
+      <div class="entry">
+        <span class="entry-tipo">${escapeHtml(e.tipo)}</span>
+        <div class="entry-msg">${escapeHtml(e.mensaje)}</div>
+        <div class="entry-fecha">${new Date(e.fecha).toLocaleString('es-MX')}</div>
+      </div>
+    `).join('');
+
+  } catch (err) {
+    errorEl.textContent = 'Error al conectar con el servidor.';
+  }
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// Guarda la clave localmente para no tener que pegarla cada vez (opcional)
+window.addEventListener('load', () => {
+  const saved = localStorage.getItem('sf_admin_key');
+  if (saved) document.getElementById('adminKey').value = saved;
+});
+document.getElementById('adminKey').addEventListener('change', (e) => {
+  localStorage.setItem('sf_admin_key', e.target.value.trim());
+});
+</script>
+</body>
+</html>
