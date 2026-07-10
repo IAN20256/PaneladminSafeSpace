@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Safe Space — Feedback (privado)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  :root{
+    --bg:#0d0d1a;--surface:#13132b;--surface2:#1a1a38;
+    --accent:#7c6ff7;--accent2:#a78bfa;--text:#e8e6ff;--muted:#8b88b3;
+    --border:rgba(124,111,247,0.2);--danger:#f87171;
+    --c-sugerencia:#48cae4;--c-queja:#f87171;--c-bug:#fbbf24;--c-otro:#a78bfa;--c-reporte:#fb7185;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:'DM Sans',system-ui,sans-serif;padding:1.5rem;min-height:100vh;}
+  h1{font-family:'Syne',sans-serif;font-size:1.4rem;margin-bottom:1rem;color:var(--accent2);}
+  .key-box{display:flex;gap:.5rem;margin-bottom:1.2rem;max-width:500px;}
+  input,textarea{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:.7rem .9rem;color:var(--text);font-size:.9rem;outline:none;font-family:inherit;}
+  input{flex:1;}
+  button{background:linear-gradient(135deg,var(--accent),#6366f1);border:none;border-radius:10px;padding:.7rem 1.2rem;color:white;font-weight:500;cursor:pointer;font-family:inherit;font-size:.85rem;}
+  button:disabled{opacity:.5;cursor:not-allowed;}
+
+  .toolbar{max-width:600px;margin-bottom:1rem;display:none;flex-direction:column;gap:.7rem;}
+  .toolbar.show{display:flex;}
+  .search-box input{width:100%;}
+  .filters{display:flex;gap:.4rem;flex-wrap:wrap;}
+  .filter-btn{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:.4rem .9rem;font-size:.78rem;color:var(--muted);cursor:pointer;transition:.15s;}
+  .filter-btn.active{background:var(--surface2);color:var(--text);border-color:var(--accent2);}
+  .stats{font-size:.78rem;color:var(--muted);}
+
+  .entry{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1rem;margin-bottom:.8rem;max-width:600px;position:relative;transition:.2s;}
+  .entry.resuelto{opacity:.5;}
+  .entry-top{display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem;margin-bottom:.5rem;}
+  .entry-tipo{display:inline-block;font-size:.7rem;padding:.2rem .6rem;border-radius:20px;text-transform:uppercase;letter-spacing:.03em;font-weight:600;color:#0d0d1a;}
+  .entry-msg{font-size:.9rem;line-height:1.5;margin-bottom:.5rem;white-space:pre-wrap;}
+  .entry-bottom{display:flex;justify-content:space-between;align-items:center;}
+  .entry-fecha{font-size:.75rem;color:var(--muted);}
+  .resolve-btn{background:var(--surface2);color:var(--muted);border:1px solid var(--border);border-radius:8px;padding:.35rem .7rem;font-size:.75rem;cursor:pointer;}
+  .resolve-btn.done{color:#4ade80;border-color:#4ade80;}
+
+  .error{color:var(--danger);font-size:.85rem;margin-bottom:1rem;}
+  .empty{color:var(--muted);}
+
+  .spinner{width:22px;height:22px;border:3px solid var(--border);border-top-color:var(--accent2);border-radius:50%;animation:spin .7s linear infinite;margin:2rem auto;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  .metrics-box{max-width:600px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1rem;margin-bottom:1rem;display:none;}
+  .metrics-box.show{display:block;}
+  .metrics-title{font-size:.78rem;color:var(--muted);margin-bottom:.6rem;text-transform:uppercase;letter-spacing:.03em;}
+  .metrics-row{display:flex;gap:1.5rem;flex-wrap:wrap;}
+  .metric-item{display:flex;flex-direction:column;}
+  .metric-num{font-size:1.4rem;font-weight:700;color:var(--accent2);}
+  .metric-label{font-size:.72rem;color:var(--muted);}
+</style>
+</head>
+<body>
+  <h1>📬 Feedback de Safe Space</h1>
+
+  <div class="key-box">
+    <input type="password" id="adminKey" placeholder="Pega tu clave de administrador aquí">
+    <button onclick="cargarFeedback()">Ver feedback</button>
+  </div>
+
+  <div class="error" id="error"></div>
+
+  <div class="toolbar" id="toolbar">
+    <div class="search-box">
+      <input type="text" id="searchInput" placeholder="Buscar en los mensajes..." oninput="renderLista()">
+    </div>
+    <div class="filters" id="filters">
+      <button class="filter-btn active" data-tipo="todos" onclick="setFiltro('todos',this)">Todos</button>
+      <button class="filter-btn" data-tipo="sugerencia" onclick="setFiltro('sugerencia',this)">💡 Sugerencia</button>
+      <button class="filter-btn" data-tipo="queja" onclick="setFiltro('queja',this)">⚠️ Queja</button>
+      <button class="filter-btn" data-tipo="bug" onclick="setFiltro('bug',this)">🐛 Bug</button>
+      <button class="filter-btn" data-tipo="otro" onclick="setFiltro('otro',this)">✨ Otro</button>
+      <button class="filter-btn" data-tipo="reporte" onclick="setFiltro('reporte',this)">🚩 Reportes</button>
+      <button class="filter-btn" data-tipo="pendientes" onclick="setFiltro('pendientes',this)">🔵 Sin resolver</button>
+    </div>
+    <div class="stats" id="stats"></div>
+  </div>
+
+  <div class="metrics-box" id="metricsBox">
+    <div class="metrics-title">Métricas del filtro de la botella</div>
+    <div class="metrics-row">
+      <div class="metric-item">
+        <span class="metric-num" id="metricToxicidad">0</span>
+        <span class="metric-label">Bloqueados por toxicidad</span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-num" id="metricCrisis">0</span>
+        <span class="metric-label">Desviados por crisis</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="spinner" class="spinner" style="display:none;"></div>
+  <div id="lista"></div>
+
+<script>
+// Cambia esto por la URL real de tu Worker una vez desplegado
+const WORKER_URL = 'https://safespace-feedback.azulito20124.workers.dev';
+
+const CAT_COLORS = {
+  sugerencia: 'var(--c-sugerencia)',
+  queja: 'var(--c-queja)',
+  bug: 'var(--c-bug)',
+  otro: 'var(--c-otro)',
+  reporte: 'var(--c-reporte)',
+};
+const CAT_LABELS = {
+  sugerencia: '💡 Sugerencia',
+  queja: '⚠️ Queja',
+  bug: '🐛 Bug',
+  otro: '✨ Otro',
+  reporte: '🚩 Reporte',
+};
+
+let todasLasEntradas = [];
+let filtroActual = 'todos';
+
+// ---------- Marcado de "resuelto" guardado localmente (por navegador) ----------
+function getResueltos() {
+  try {
+    return JSON.parse(localStorage.getItem('sf_feedback_resueltos') || '[]');
+  } catch (e) {
+    return [];
+  }
+}
+function toggleResuelto(id) {
+  const resueltos = getResueltos();
+  const idx = resueltos.indexOf(id);
+  if (idx === -1) resueltos.push(id);
+  else resueltos.splice(idx, 1);
+  localStorage.setItem('sf_feedback_resueltos', JSON.stringify(resueltos));
+  renderLista();
+}
+
+function setFiltro(tipo, btn) {
+  filtroActual = tipo;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderLista();
+}
+
+async function cargarFeedback() {
+  const key = document.getElementById('adminKey').value.trim();
+  const errorEl = document.getElementById('error');
+  const listaEl = document.getElementById('lista');
+  const spinnerEl = document.getElementById('spinner');
+  const toolbarEl = document.getElementById('toolbar');
+  errorEl.textContent = '';
+  listaEl.innerHTML = '';
+  toolbarEl.classList.remove('show');
+
+  if (!key) {
+    errorEl.textContent = 'Escribe tu clave primero.';
+    return;
+  }
+
+  spinnerEl.style.display = 'block';
+
+  try {
+    const res = await fetch(WORKER_URL + '/list', {
+      headers: { 'Authorization': 'Bearer ' + key }
+    });
+
+    spinnerEl.style.display = 'none';
+
+    if (res.status === 401) {
+      errorEl.textContent = 'Clave incorrecta.';
+      return;
+    }
+    if (!res.ok) {
+      errorEl.textContent = 'Error al conectar con el servidor.';
+      return;
+    }
+
+    const data = await res.json();
+    const allEntries = data.entries || [];
+
+    // Las entradas de tipo "metrica" no son mensajes para leer, son solo
+    // contadores anonimos del filtro de la botella. Se separan del resto.
+    const metricEntries = allEntries.filter(e => e.tipo === 'metrica');
+    todasLasEntradas = allEntries.filter(e => e.tipo !== 'metrica');
+
+    const numToxicidad = metricEntries.filter(e => e.mensaje === 'toxicidad_bloqueada').length;
+    const numCrisis = metricEntries.filter(e => e.mensaje === 'crisis_desviada').length;
+    document.getElementById('metricToxicidad').textContent = numToxicidad;
+    document.getElementById('metricCrisis').textContent = numCrisis;
+    document.getElementById('metricsBox').classList.add('show');
+
+    toolbarEl.classList.add('show');
+    renderLista();
+
+  } catch (err) {
+    spinnerEl.style.display = 'none';
+    errorEl.textContent = 'Error al conectar con el servidor.';
+  }
+}
+
+function renderLista() {
+  const listaEl = document.getElementById('lista');
+  const statsEl = document.getElementById('stats');
+  const search = (document.getElementById('searchInput').value || '').toLowerCase().trim();
+  const resueltos = getResueltos();
+
+  let filtradas = todasLasEntradas;
+
+  if (filtroActual === 'pendientes') {
+    filtradas = filtradas.filter(e => !resueltos.includes(e.id));
+  } else if (filtroActual !== 'todos') {
+    filtradas = filtradas.filter(e => e.tipo === filtroActual);
+  }
+
+  if (search) {
+    filtradas = filtradas.filter(e => e.mensaje.toLowerCase().includes(search));
+  }
+
+  const totalPendientes = todasLasEntradas.filter(e => !resueltos.includes(e.id)).length;
+  statsEl.textContent = todasLasEntradas.length + ' mensajes en total · ' + totalPendientes + ' sin resolver';
+
+  if (filtradas.length === 0) {
+    listaEl.innerHTML = '<p class="empty">No hay mensajes que coincidan.</p>';
+    return;
+  }
+
+  listaEl.innerHTML = filtradas.map(e => {
+    const esResuelto = resueltos.includes(e.id);
+    const color = CAT_COLORS[e.tipo] || CAT_COLORS.otro;
+    const label = CAT_LABELS[e.tipo] || ('✨ ' + escapeHtml(e.tipo));
+    return `
+      <div class="entry ${esResuelto ? 'resuelto' : ''}">
+        <div class="entry-top">
+          <span class="entry-tipo" style="background:${color};">${label}</span>
+        </div>
+        <div class="entry-msg">${escapeHtml(e.mensaje)}</div>
+        <div class="entry-bottom">
+          <span class="entry-fecha">${new Date(e.fecha).toLocaleString('es-MX')}</span>
+          <button class="resolve-btn ${esResuelto ? 'done' : ''}" onclick="toggleResuelto('${e.id}')">
+            ${esResuelto ? '✓ Resuelto' : 'Marcar como resuelto'}
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// Guarda la clave localmente para no tener que pegarla cada vez
+window.addEventListener('load', () => {
+  const saved = localStorage.getItem('sf_admin_key');
+  if (saved) document.getElementById('adminKey').value = saved;
+});
+document.getElementById('adminKey').addEventListener('change', (e) => {
+  localStorage.setItem('sf_admin_key', e.target.value.trim());
+});
+</script>
+</body>
+</html>
