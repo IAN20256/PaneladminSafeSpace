@@ -53,6 +53,21 @@
   .metric-item{display:flex;flex-direction:column;}
   .metric-num{font-size:1.4rem;font-weight:700;color:var(--accent2);}
   .metric-label{font-size:.72rem;color:var(--muted);}
+
+  .codes-box{max-width:600px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1rem;margin-bottom:1rem;display:none;}
+  .codes-box.show{display:block;}
+  .codes-form{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.6rem;}
+  .codes-form label{display:flex;flex-direction:column;gap:.25rem;font-size:.72rem;color:var(--muted);}
+  .codes-form input{width:100%;padding:.55rem .7rem;font-size:.85rem;}
+  .codes-form .full{grid-column:1 / -1;}
+  .codes-msg{font-size:.8rem;margin:.3rem 0 .6rem;min-height:1em;}
+  .codes-msg.ok{color:#4ade80;} .codes-msg.err{color:var(--danger);}
+  .code-row{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem .8rem;padding:.6rem 0;border-top:1px solid var(--border);font-size:.8rem;}
+  .code-row.off{opacity:.45;}
+  .code-name{font-family:ui-monospace,Menlo,monospace;font-weight:700;font-size:.9rem;color:var(--text);letter-spacing:.03em;}
+  .code-meta{color:var(--muted);}
+  .code-actions{margin-left:auto;display:flex;gap:.4rem;}
+  .small-btn{background:var(--surface2);color:var(--muted);border:1px solid var(--border);border-radius:8px;padding:.3rem .6rem;font-size:.72rem;cursor:pointer;}
 </style>
 </head>
 <body>
@@ -97,6 +112,20 @@
         <span class="metric-label">Desviados por crisis</span>
       </div>
     </div>
+  </div>
+
+  <div class="codes-box" id="codesBox">
+    <div class="metrics-title">🎁 Códigos de regalo de SafeSpace+</div>
+    <div class="codes-form">
+      <label>Código (vacío = se crea uno al azar)<input type="text" id="codeName" placeholder="Ej. ESCUELA-2026" maxlength="32" style="text-transform:uppercase;"></label>
+      <label>Días de SafeSpace+ que da<input type="number" id="codeDays" value="30" min="1" max="366"></label>
+      <label>Cuántas veces se puede usar<input type="number" id="codeUses" value="1" min="1" max="10000"></label>
+      <label>Vence (opcional)<input type="date" id="codeExpires"></label>
+      <label class="full">Nota para ti (opcional)<input type="text" id="codeNote" placeholder="Ej. Para mis testers" maxlength="120"></label>
+    </div>
+    <button onclick="crearCodigo()" id="codeCreateBtn">Crear código</button>
+    <div class="codes-msg" id="codesMsg"></div>
+    <div id="codesList"></div>
   </div>
 
   <div id="spinner" class="spinner" style="display:none;"></div>
@@ -199,6 +228,7 @@ async function cargarFeedback() {
 
     toolbarEl.classList.add('show');
     renderLista();
+    cargarCodigos();
 
   } catch (err) {
     spinnerEl.style.display = 'none';
@@ -319,6 +349,90 @@ async function borrarMensajeBotella(id, btn) {
     btn.disabled = false;
     btn.textContent = '🗑️ Borrar mensaje de botella';
   }
+}
+
+// ---------- Códigos de regalo ----------
+function adminHeaders() {
+  return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + document.getElementById('adminKey').value.trim() };
+}
+function codesMsg(text, kind) {
+  const el = document.getElementById('codesMsg');
+  el.textContent = text || '';
+  el.className = 'codes-msg' + (kind ? ' ' + kind : '');
+}
+async function cargarCodigos() {
+  const box = document.getElementById('codesBox');
+  box.classList.add('show');
+  try {
+    const res = await fetch(WORKER_URL + '/codes', { headers: adminHeaders() });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { codesMsg(data.error || 'No se pudieron cargar los códigos.', 'err'); return; }
+    renderCodigos(data.codes || []);
+  } catch (e) {
+    codesMsg('Error al conectar con el servidor.', 'err');
+  }
+}
+function renderCodigos(codes) {
+  const list = document.getElementById('codesList');
+  if (!codes.length) { list.innerHTML = '<p class="empty" style="font-size:.8rem;">Todavía no hay códigos.</p>'; return; }
+  const hoy = new Date().toISOString().slice(0, 10);
+  list.innerHTML = codes.map(c => {
+    const vencido = c.expires && c.expires < hoy;
+    const agotado = c.uses >= c.max_uses;
+    const estado = !c.active ? 'Desactivado' : vencido ? 'Vencido' : agotado ? 'Agotado' : 'Activo';
+    const off = estado !== 'Activo';
+    const code = escapeHtml(c.code);
+    return `
+      <div class="code-row ${off ? 'off' : ''}">
+        <span class="code-name">${code}</span>
+        <span class="code-meta">${c.days} días · ${c.uses}/${c.max_uses} usos${c.expires ? ' · vence ' + escapeHtml(c.expires) : ''} · ${estado}</span>
+        ${c.note ? `<span class="code-meta" style="width:100%;">${escapeHtml(c.note)}</span>` : ''}
+        <span class="code-actions">
+          <button class="small-btn" onclick="copiarCodigo('${code}', this)">Copiar</button>
+          ${c.active ? `<button class="small-btn" onclick="desactivarCodigo('${code}')">Desactivar</button>` : ''}
+        </span>
+      </div>`;
+  }).join('');
+}
+async function crearCodigo() {
+  const btn = document.getElementById('codeCreateBtn');
+  const body = {
+    code: document.getElementById('codeName').value.trim() || undefined,
+    days: Number(document.getElementById('codeDays').value),
+    maxUses: Number(document.getElementById('codeUses').value),
+    expires: document.getElementById('codeExpires').value || undefined,
+    note: document.getElementById('codeNote').value.trim() || undefined,
+  };
+  btn.disabled = true; codesMsg('Creando…');
+  try {
+    const res = await fetch(WORKER_URL + '/codes', { method: 'POST', headers: adminHeaders(), body: JSON.stringify(body) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { codesMsg(data.error || 'No se pudo crear el código.', 'err'); return; }
+    codesMsg('Código creado: ' + data.code + ' (' + data.days + (data.days === 1 ? ' día, ' : ' días, ') + data.maxUses + (data.maxUses === 1 ? ' uso)' : ' usos)'), 'ok');
+    document.getElementById('codeName').value = '';
+    document.getElementById('codeNote').value = '';
+    cargarCodigos();
+  } catch (e) {
+    codesMsg('Error al conectar con el servidor.', 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+async function desactivarCodigo(code) {
+  if (!confirm('¿Desactivar el código ' + code + '? Ya no se podrá canjear (quien ya lo usó conserva sus días).')) return;
+  try {
+    const res = await fetch(WORKER_URL + '/codes/disable', { method: 'POST', headers: adminHeaders(), body: JSON.stringify({ code }) });
+    if (!res.ok) { codesMsg('No se pudo desactivar.', 'err'); return; }
+    codesMsg('Código ' + code + ' desactivado.', 'ok');
+    cargarCodigos();
+  } catch (e) {
+    codesMsg('Error al conectar con el servidor.', 'err');
+  }
+}
+function copiarCodigo(code, btn) {
+  const done = () => { btn.textContent = '¡Copiado!'; setTimeout(() => { btn.textContent = 'Copiar'; }, 1400); };
+  if (navigator.clipboard) navigator.clipboard.writeText(code).then(done).catch(() => prompt('Copia el código:', code));
+  else prompt('Copia el código:', code);
 }
 
 function escapeHtml(str) {
